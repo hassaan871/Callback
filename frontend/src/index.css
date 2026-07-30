@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-bg text-text font-sans antialiased;
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display font-semibold;
+  }
+}
+
+/* Custom design classes from styles.css */
+
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Animations */
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(232, 97, 61, 0.5); }
+  70% { box-shadow: 0 0 0 6px rgba(232, 97, 61, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(232, 97, 61, 0); }
+}
+
+.animate-rec-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes blink { 
+  50% { opacity: 0; } 
+}
+
+.animate-caret-blink {
+  animation: blink 1s step-start infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rec-pulse, .animate-caret-blink {
+    animation: none;
+  }
+}
