@@ -1,5 +1,6 @@
 import express from 'express';
-import { signup, login } from '../controllers/auth.controller.js';
+import { signup, login, resetPassword } from '../controllers/auth.controller.js';
+import { verifyJWT } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
@@ -38,7 +39,7 @@ const router = express.Router();
  *                 example: Doe
  *               password:
  *                 type: string
- *                 example: securePassword123
+ *                 example: SecureP@ss123
  *     responses:
  *       201:
  *         description: User registered successfully
@@ -104,5 +105,54 @@ router.post('/signup', signup);
  *         description: Invalid credentials
  */
 router.post('/login', login);
+
+/**
+ * @openapi
+ * /api/v1/auth/reset-password:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Reset user password
+ *     description: Resets the authenticated user's password. Requires the reset JWT token in the header.
+ *     parameters:
+ *       - in: header
+ *         name: token
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: JWT password reset token
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - newPassword
+ *             properties:
+ *               newPassword:
+ *                 type: string
+ *                 example: NewSecureP@ss123
+ *                 description: Must be at least 6 characters
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Password has been reset successfully
+ *       400:
+ *         description: Invalid inputs or password too short
+ *       401:
+ *         description: Invalid or expired token
+ */
+router.post('/reset-password', verifyJWT, resetPassword);
 
 export default router;
