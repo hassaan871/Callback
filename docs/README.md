@@ -1,9 +1,6 @@
 # Callback: AI-Powered Technical Mock Interview Platform
 
-Welcome to the documentation for **Callback**. Callback is a technical mock interview simulator design to help software engineers, DevOps/SREs, data engineers, and ML specialists practice realistic panel-style technical interviews. 
-
-> [!NOTE]
-> All pre-existing backend APIs, mock interview endpoints, and dynamic AI evaluation logic have been removed from the backend to establish a clean, skeleton codebase. Developers or AI assistants can design and build new endpoints from scratch.
+Welcome to the documentation for **Callback**. Callback is a technical mock interview simulator designed to help software engineers, DevOps/SREs, data engineers, and ML specialists practice realistic panel-style technical interviews.
 
 ---
 
@@ -39,6 +36,7 @@ The application aims to evaluate:
 ```mermaid
 graph TD
     Client[React Frontend / Redux Toolkit] <-->|HTTP REST / JSON| Server[Node.js Express Server]
+    Server <-->|mongoose| DB[(MongoDB Atlas)]
 ```
 
 ### Frontend
@@ -47,10 +45,12 @@ graph TD
 - **Styling:** Tailwind CSS (configured in `tailwind.config.js` with dark mode palettes)
 - **Typography:** Space Grotesk (display headings) & IBM Plex Sans/Mono (text/code)
 
-### Backend (Skeleton)
+### Backend (Express)
 - **Framework:** Express (Node.js using ES Modules)
+- **Database:** MongoDB Atlas via Mongoose
+- **Validation:** Input parsing using **Zod**
+- **Authentication:** JSON Web Tokens (JWT) stored in HTTP-Only cookies and authorization headers
 - **Middlewares:** Helmet, CORS, Morgan, Express JSON/URLEncoded parser.
-- **Database (Unused):** Mongoose models are available but not connected to any routes.
 
 ---
 
@@ -61,15 +61,16 @@ callback/
 ├── docs/                   # Product & Architecture Documentation
 │   ├── backend/
 │   └── frontend/
-├── backend/                # Express Server Directory (Skeleton)
+├── backend/                # Express Server Directory
 │   ├── src/
 │   │   ├── config/         # Database Connections (db.js)
-│   │   ├── controllers/    # Deprecated/Removed (empty)
-│   │   ├── models/         # MongoDB Schemas (Interview.js)
-│   │   ├── routes/         # Deprecated/Removed (empty)
-│   │   ├── services/       # Deprecated/Removed (empty)
-│   │   ├── utils/          # Helper middleware (asyncHandler.js)
-│   │   ├── app.js          # Express app configuration (No active API routes)
+│   │   ├── repository/     # Database Queries (user.repository.js)
+│   │   ├── validations/    # Input Validations (auth.validation.js)
+│   │   ├── controllers/    # API Route Logic (auth.controller.js)
+│   │   ├── models/         # MongoDB Schemas (user.model.js)
+│   │   ├── routes/         # Router declarations (auth.routes.js, routes.js)
+│   │   ├── utils/          # Helpers (asyncHandler.js, bcrypt.utility.js, jwt.utility.js)
+│   │   ├── app.js          # Express app configuration (CORS, Middlewares, API mounting)
 │   │   └── server.js       # Entry point / server initialization
 │   ├── .env.example        # Reference environment configuration
 │   └── package.json
@@ -88,7 +89,76 @@ callback/
 
 ---
 
-## 5. Local Setup & Running Instructions
+## 5. API Reference (Authentication)
+
+All version 1 API endpoints are versioned and mounted under the `/api/v1/` prefix.
+
+### Endpoints
+
+#### 1. User Signup
+* **Route:** `POST /api/v1/auth/signup`
+* **Request Body:**
+  ```json
+  {
+    "username": "john_doe",
+    "email": "john@example.com",
+    "firstname": "John",
+    "lastname": "Doe",
+    "password": "secure_password_123"
+  }
+  ```
+* **Response (201 Created):**
+  ```json
+  {
+    "success": true,
+    "message": "User registered successfully",
+    "user": {
+      "_id": "64b3ef8e1329c2ab87dc4612",
+      "username": "john_doe",
+      "email": "john@example.com",
+      "firstname": "John",
+      "lastname": "Doe",
+      "role": "user",
+      "createdAt": "2026-07-31T19:06:50.000Z",
+      "updatedAt": "2026-07-31T19:06:50.000Z"
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+  ```
+  *Note: Sets an HTTP-Only cookie `token` in the browser.*
+
+#### 2. User Login
+* **Route:** `POST /api/v1/auth/login`
+* **Request Body:**
+  ```json
+  {
+    "email": "john@example.com",
+    "password": "secure_password_123"
+  }
+  ```
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Logged in successfully",
+    "user": {
+      "_id": "64b3ef8e1329c2ab87dc4612",
+      "username": "john_doe",
+      "email": "john@example.com",
+      "firstname": "John",
+      "lastname": "Doe",
+      "role": "user",
+      "createdAt": "2026-07-31T19:06:50.000Z",
+      "updatedAt": "2026-07-31T19:06:50.000Z"
+    },
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+  ```
+  *Note: Sets an HTTP-Only cookie `token` in the browser.*
+
+---
+
+## 6. Local Setup & Running Instructions
 
 ### Backend Setup
 1. Navigate to backend:
@@ -107,7 +177,7 @@ callback/
    ```bash
    npm run dev
    ```
-   *The server runs by default on port `5000` (http://localhost:5000) with a 404 handler for all endpoints.*
+   *The server runs by default on port `5000` (http://localhost:5000).*
 
 ### Frontend Setup
 1. Navigate to frontend:
