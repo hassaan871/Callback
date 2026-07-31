@@ -1,27 +1,23 @@
-import Navbar from './components/Navbar';
-import Hero from './components/Hero';
-import WhoItIsFor from './components/WhoItIsFor';
-import Tracks from './components/Tracks';
-import HowItWorks from './components/HowItWorks';
-import Progress from './components/Progress';
-import Pricing from './components/Pricing';
-import Footer from './components/Footer';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import LandingPage from './pages/LandingPage';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
+import Dashboard from './pages/Dashboard';
 
+/**
+ * App root component defining the client-side router navigation schemas.
+ * @returns {JSX.Element} The router shell.
+ */
 function App() {
   return (
-    <div className="relative min-h-screen">
-      <div className="noise-overlay" aria-hidden="true"></div>
-      <Navbar />
-      <main id="top">
-        <Hero />
-        <WhoItIsFor />
-        <Tracks />
-        <HowItWorks />
-        <Progress />
-        <Pricing />
-      </main>
-      <Footer />
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
