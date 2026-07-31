@@ -89,6 +89,21 @@ export const login = asyncHandler(async (req, res) => {
     });
   }
 
+  // Verify account status after password match succeeds to prevent information leak
+  if (user.is_blocked) {
+    return res.status(403).json({
+      success: false,
+      message: 'Your account has been blocked'
+    });
+  }
+
+  if (user.deleted_on) {
+    return res.status(401).json({
+      success: false,
+      message: 'This account has been deleted'
+    });
+  }
+
   const token = generateToken(user);
 
   const { password: _, ...userData } = user.toObject();

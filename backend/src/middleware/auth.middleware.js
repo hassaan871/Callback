@@ -38,6 +38,13 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
       });
     }
 
+    if (user.deleted_on) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: This account has been deleted'
+      });
+    }
+
     req.user = user;
     next();
   } catch (error) {
