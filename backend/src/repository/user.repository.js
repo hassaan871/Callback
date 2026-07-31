@@ -17,3 +17,12 @@ export const createUser = async (userData) => {
 export const findUserByEmail = async (email) => {
   return await User.findOne({ email });
 };
+
+/**
+ * Finds a user by their database ID.
+ * @param {string} id - The MongoDB ObjectId.
+ * @returns {Promise<Object|null>} The database user document (excluding password) or null.
+ */
+export const findUserById = async (id) => {
+  return await User.findById(id).select('-password');
+};

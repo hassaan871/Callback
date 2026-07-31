@@ -7,6 +7,8 @@ const router = express.Router();
  * @openapi
  * /api/v1/auth/signup:
  *   post:
+ *     tags:
+ *       - Authentication
  *     summary: Register a new user
  *     description: Creates a user account with username, email, firstname, lastname, and password.
  *     requestBody:
@@ -62,6 +64,8 @@ router.post('/signup', signup);
  * @openapi
  * /api/v1/auth/login:
  *   post:
+ *     tags:
+ *       - Authentication
  *     summary: Authenticate user
  *     description: Authenticates user credentials (email and password) and returns session token.
  *     requestBody:
