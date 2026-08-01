@@ -1,82 +1,296 @@
-# Callback Backend Documentation
+# Callback Backend API Documentation
 
-This folder contains the backend API services for the Callback platform, built with Node.js, Express, Zod, Mongoose, and JSON Web Tokens.
-
----
-
-## Technical Stack
-- **Runtime:** Node.js (ES Modules syntax)
-- **Server Framework:** Express
-- **Middlewares:** Helmet, CORS, Morgan, Express JSON/URLEncoded parser.
-- **Database:** MongoDB Atlas (managed via Mongoose)
-- **Validation:** Zod (TypeScript-first schema validation)
-- **Authentication:** JWT (JSON Web Tokens)
+This documentation serves as the comprehensive source of truth for the Callback backend service APIs, validation schemas, response structures, and system configurations.
 
 ---
 
-## Core Layout and Layer Responsibilities
-
-1. **`src/server.js`**
-   - Boots up the application and connects the MongoDB Atlas database.
-
-2. **`src/app.js`**
-   - Configures application-wide middlewares (Helmet, CORS, Morgan).
-   - Mounts the central API router `/api` and registers global error handlers.
-
-3. **`src/routes/`**
-   - **`routes.js`**: The central router. Aggregates versioned routes (e.g. mounting `authRoutes` under `/v1/auth`).
-   - **`auth.routes.js`**: Declares authentication route endpoints (`/signup` and `/login`) and binds them to the auth controller.
-
-4. **`src/controllers/`**
-   - **`auth.controller.js`**: Handles business workflows for signup and login. Performs input validation using Zod schemas, hashes passwords using bcrypt, generates session tokens, and returns clean, sanitized payloads.
-
-5. **`src/validations/`**
-   - **`auth.validation.js`**: Declares Zod validation schemas (`signupSchema` and `loginSchema`) to verify shape, structure, and constraints of incoming requests before database access.
-
-6. **`src/repository/`**
-   - **`user.repository.js`**: The database access layer. Holds all direct query interactions with Mongoose (like `User.create` and `User.findOne`) to isolate model operations from business controller layers.
-
-7. **`src/models/`**
-   - **`user.model.js`**: Establishes the Mongoose schema for User account documents. Contains only definition and models, with no embedded save-hooks or logic.
-
-8. **`src/utils/`**
-   - **`asyncHandler.js`**: Middleware helper to capture asynchronous errors and return standard 500 error responses.
-   - **`bcrypt.utility.js`**: Helper functions wrapping bcrypt to hash passwords and verify credentials.
-   - **`jwt.utility.js`**: Helper functions wrapping jsonwebtoken to sign session tokens.
+## 1. Technical Stack & Middlewares
+*   **Runtime Environment**: Node.js (ES Modules, modern import syntax)
+*   **Web Framework**: Express
+*   **Database Engine**: MongoDB (managed through Mongoose ORM)
+*   **Input Validation**: Zod (strict schema validation schemas)
+*   **Authentication**: JSON Web Tokens (JWT) stored in HTTP-Only cookies (`token`) and supported via request headers (`token` or `Authorization`)
+*   **Security & Logs**: Morgan (HTTP request logging), CORS (cross-origin sharing), Helmet (secure HTTP headers)
 
 ---
 
-## Swagger API Documentation
+## 2. API Architecture & Layer Responsibilities
 
-The backend includes auto-generated Swagger UI docs powered by `swagger-ui-express` and `swagger-jsdoc`. 
+```text
+src/
+├── config/         # Database connection initialization
+├── repository/     # Direct database access logic (isolating Mongoose models)
+├── validations/    # Input shape & rule validations (Zod schemas)
+├── controllers/    # API workflow handler logic (business logic)
+├── models/         # Mongoose schemas & MongoDB database collections
+├── routes/         # Router mounts and OpenAPI specs mapping
+├── utils/          # Middleware exceptions, hashing, and token helpers
+├── app.js          # Express app configuration & middleware pipeline
+└── server.js       # Entry point starting the database and HTTP server
+```
 
-* **Documentation Endpoint:** `http://localhost:5000/api-docs`
-* **Route Files Specifications:** OpenAPI comments are declared directly in route routers (e.g. `auth.routes.js`) using `@openapi` metadata.
+---
 
-### API Endpoints Summary
+## 3. Swagger UI Docs
 
-#### 1. Signup (`POST /api/v1/auth/signup`)
-* **Purpose:** Registers a new user account.
-* **Payload:**
-  ```json
-  {
-    "username": "string",
-    "email": "string",
-    "firstname": "string",
-    "lastname": "string",
-    "password": "string"
-  }
-  ```
-* **Response (201 Created):** Returns user details and sets an HTTP-Only session cookie `token`.
+The backend includes auto-generated Swagger UI docs powered by `swagger-ui-express` and `swagger-jsdoc`.
+*   **Docs Endpoint**: `http://localhost:5000/api-docs`
+*   **Route Specifications**: Declared using JSDoc inline `@openapi` annotations in files under `src/routes/*.js`.
 
-#### 2. Login (`POST /api/v1/auth/login`)
-* **Purpose:** Authenticates user and returns JWT.
-* **Payload:**
-  ```json
-  {
-    "email": "string",
-    "password": "string"
-  }
-  ```
-* **Response (200 OK):** Returns logged-in user profile and sets an HTTP-Only session cookie `token`.
+---
 
+## 4. Authentication & Security Middleware
+
+### JWT Verification Middleware (`verifyJWT`)
+Secures private endpoints. Checks the incoming request for a token in the `token` header, the `Authorization` header, or the HTTP-Only cookie.
+*   **Failure Modes**:
+    *   **401 Unauthorized (Missing)**: Access token is missing.
+    *   **401 Unauthorized (Invalid/Expired)**: Access token is invalid or expired.
+    *   **401 Unauthorized (Deleted)**: Account has been marked deleted in the system.
+    *   **403 Forbidden (Blocked)**: Account has been suspended (`is_blocked: true`).
+
+---
+
+## 5. Endpoints Reference
+
+### 1. User Signup
+*   **Endpoint**: `POST /api/v1/auth/signup`
+*   **Access**: Public (Unauthenticated)
+*   **Request Headers**: `Content-Type: application/json`
+*   **Validation Rules (Zod Schema)**:
+    *   `email`: Valid email format, trimmed, case-insensitive (coerced to lowercase).
+    *   `username`: Minimum 3 characters, trimmed, case-insensitive (coerced to lowercase).
+    *   `firstname`: Minimum 1 character, trimmed.
+    *   `lastname`: Minimum 1 character, trimmed.
+    *   `password`: Minimum 8 characters, must contain at least:
+        *   1 uppercase letter
+        *   1 lowercase letter
+        *   1 number
+        *   1 special character (`!@#$%^&*(),.?":{}|<>`)
+*   **Payload Example**:
+    ```json
+    {
+      "username": "johndoe",
+      "email": "john@example.com",
+      "firstname": "John",
+      "lastname": "Doe",
+      "password": "SecureP@ssword1"
+    }
+    ```
+*   **Success Response (201 Created)**:
+    *   *Sets Cookie:* `token=<jwt_string>; HttpOnly; Max-Age=86400000; Path=/`
+    *   *Body JSON:*
+        ```json
+        {
+          "success": true,
+          "message": "User registered successfully",
+          "user": {
+            "_id": "64b3ef8e1329c2ab87dc4612",
+            "username": "johndoe",
+            "email": "john@example.com",
+            "firstname": "John",
+            "lastname": "Doe",
+            "role": "user",
+            "is_blocked": false,
+            "deleted_on": null,
+            "createdAt": "2026-07-31T19:06:50.000Z",
+            "updatedAt": "2026-07-31T19:06:50.000Z"
+          },
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        }
+        ```
+*   **Error Responses**:
+    *   `400 Bad Request` (Validation Failure):
+        ```json
+        {
+          "success": false,
+          "message": "Validation failed",
+          "errors": [
+            { "field": "password", "message": "Password must be at least 8 characters long" }
+          ]
+        }
+        ```
+    *   `400 Bad Request` (Email/Username Taken):
+        ```json
+        {
+          "success": false,
+          "message": "User already exists with this email or username"
+        }
+        ```
+
+---
+
+### 2. User Login
+*   **Endpoint**: `POST /api/v1/auth/login`
+*   **Access**: Public (Unauthenticated)
+*   **Request Headers**: `Content-Type: application/json`
+*   **Validation Rules (Zod Schema)**:
+    *   `email`: Valid email format, trimmed, lowercase.
+    *   `password`: Minimum 1 character (required).
+*   **Payload Example**:
+    ```json
+    {
+      "email": "john@example.com",
+      "password": "SecureP@ssword1"
+    }
+    ```
+*   **Success Response (200 OK)**:
+    *   *Sets Cookie:* `token=<jwt_string>; HttpOnly; Max-Age=86400000; Path=/`
+    *   *Body JSON:*
+        ```json
+        {
+          "success": true,
+          "message": "Logged in successfully",
+          "user": {
+            "_id": "64b3ef8e1329c2ab87dc4612",
+            "username": "johndoe",
+            "email": "john@example.com",
+            "firstname": "John",
+            "lastname": "Doe",
+            "role": "user",
+            "is_blocked": false,
+            "deleted_on": null,
+            "createdAt": "2026-07-31T19:06:50.000Z",
+            "updatedAt": "2026-07-31T19:06:50.000Z"
+          },
+          "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        }
+        ```
+*   **Error Responses**:
+    *   `400 Bad Request` (Validation Failure):
+        ```json
+        {
+          "success": false,
+          "message": "Validation failed",
+          "errors": [
+            { "field": "email", "message": "Invalid email address" }
+          ]
+        }
+        ```
+    *   `401 Unauthorized` (Invalid Credentials / Deleted Account):
+        ```json
+        {
+          "success": false,
+          "message": "Invalid email or password"
+        }
+        ```
+    *   `403 Forbidden` (Account Suspended):
+        ```json
+        {
+          "success": false,
+          "message": "Your account has been blocked"
+        }
+        ```
+
+---
+
+### 3. Reset Password (Authenticated Update)
+*   **Endpoint**: `POST /api/v1/auth/reset-password`
+*   **Access**: Private (Requires active `verifyJWT` session)
+*   **Request Headers**:
+    *   `Content-Type: application/json`
+    *   `token` or `Authorization`: `<JWT_Token>` (if cookies are not utilized)
+*   **Validation Rules (Zod Schema)**:
+    *   `newPassword`: Minimum 8 characters, must satisfy complexity criteria (1 uppercase, 1 lowercase, 1 number, 1 special character).
+*   **Payload Example**:
+    ```json
+    {
+      "newPassword": "NewSecureP@ssword12"
+    }
+    ```
+*   **Success Response (200 OK)**:
+    ```json
+    {
+      "success": true,
+      "message": "Password has been reset successfully"
+    }
+    ```
+*   **Error Responses**:
+    *   `400 Bad Request` (Validation Failure):
+        ```json
+        {
+          "success": false,
+          "message": "Validation failed",
+          "errors": [
+            { "message": "Password must be at least 8 characters long" }
+          ]
+        }
+        ```
+    *   `401 Unauthorized` (Missing or Invalid Session):
+        ```json
+        {
+          "success": false,
+          "message": "Unauthorized: Access token is invalid or expired"
+        }
+        ```
+
+---
+
+### 4. Get Current User Profile
+*   **Endpoint**: `GET /api/v1/user/me`
+*   **Access**: Private (Requires active `verifyJWT` session)
+*   **Request Headers**:
+    *   `token` or `Authorization`: `<JWT_Token>` (if cookies are not utilized)
+*   **Success Response (200 OK)**:
+    ```json
+    {
+      "success": true,
+      "user": {
+        "_id": "64b3ef8e1329c2ab87dc4612",
+        "email": "john@example.com",
+        "username": "johndoe",
+        "firstname": "John",
+        "lastname": "Doe",
+        "role": "user",
+        "is_blocked": false,
+        "deleted_on": null,
+        "createdAt": "2026-07-31T19:06:50.000Z",
+        "updatedAt": "2026-07-31T19:06:50.000Z"
+      }
+    }
+    ```
+*   **Error Responses**:
+    *   `401 Unauthorized`:
+        ```json
+        {
+          "success": false,
+          "message": "Unauthorized: Access token is missing"
+        }
+        ```
+
+---
+
+### 5. Logout (Proposed)
+*   **Endpoint**: `POST /api/v1/auth/logout`
+*   **Access**: Public or Private
+*   **Success Response (200 OK)**:
+    *   *Clears Cookie:* Sets cookie `token=; HttpOnly; Max-Age=0; Path=/` (expires immediately)
+    *   *Body JSON:*
+        ```json
+        {
+          "success": true,
+          "message": "Logged out successfully"
+        }
+        ```
+
+---
+
+## 6. Global Error Structure
+
+### 404 Route Not Found
+Triggered when requesting a resource or URI that is not registered:
+*   **Response (404 Not Found)**:
+    ```json
+    {
+      "error": "Endpoint not found"
+    }
+    ```
+
+### 500 Uncaught Exception
+Triggered when an unhandled code exception occurs during runtime:
+*   **Response (500 Internal Server Error)**:
+    ```json
+    {
+      "error": "Internal Server Error"
+    }
+    ```
