@@ -4,6 +4,13 @@ import { signupSchema, loginSchema, resetPasswordSchema } from '../validations/a
 import { hashPassword, comparePassword } from '../utils/bcrypt.utility.js';
 import { generateToken } from '../utils/jwt.utility.js';
 
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: 12 * 60 * 60 * 1000 // 12 hours to match JWT expiry
+};
+
 /**
  * Handles the registration of a new user.
  * Validates request payload, hashes credentials, and persists user record.
@@ -41,7 +48,7 @@ export const signup = asyncHandler(async (req, res) => {
 
   const { password: _, ...userData } = newUser.toObject();
   return res.status(201)
-    .cookie('token', token, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 })
+    .cookie('token', token, COOKIE_OPTIONS)
     .json({
       success: true,
       message: 'User registered successfully',
@@ -108,7 +115,7 @@ export const login = asyncHandler(async (req, res) => {
 
   const { password: _, ...userData } = user.toObject();
   return res.status(200)
-    .cookie('token', token, { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 })
+    .cookie('token', token, COOKIE_OPTIONS)
     .json({
       success: true,
       message: 'Logged in successfully',
@@ -146,5 +153,27 @@ export const resetPassword = asyncHandler(async (req, res) => {
   return res.status(200).json({
     success: true,
     message: 'Password has been reset successfully'
+  });
+});
+
+/**
+ * Logs out user by incrementing user's session_version in the DB (revoking token)
+ * and clearing the HTTP-Only cookie.
+ */
+export const logout = asyncHandler(async (req, res) => {
+  if (req.user) {
+    req.user.session_version = (req.user.session_version || 0) + 1;
+    await req.user.save();
+  }
+
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: 'Logged out successfully'
   });
 });

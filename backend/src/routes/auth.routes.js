@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup, login, resetPassword } from '../controllers/auth.controller.js';
+import { signup, login, resetPassword, logout } from '../controllers/auth.controller.js';
 import { verifyJWT } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -154,5 +154,19 @@ router.post('/login', login);
  *         description: Invalid or expired token
  */
 router.post('/reset-password', verifyJWT, resetPassword);
+
+/**
+ * @openapi
+ * /api/v1/auth/logout:
+ *   post:
+ *     tags:
+ *       - Authentication
+ *     summary: Logout user session
+ *     description: Invalidates user token server-side and clears cookies.
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
+router.post('/logout', verifyJWT, logout);
 
 export default router;

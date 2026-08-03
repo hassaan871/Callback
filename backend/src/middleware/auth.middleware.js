@@ -11,7 +11,7 @@ import asyncHandler from '../utils/asyncHandler.js';
  * @param {import('express').NextFunction} next
  */
 export const verifyJWT = asyncHandler(async (req, res, next) => {
-  const token = req.headers.authorization || req.headers.token;
+  const token = req.cookies?.token || req.headers.authorization || req.headers.token;
 
   if (!token) {
     return res.status(401).json({
@@ -28,6 +28,13 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
       return res.status(401).json({
         success: false,
         message: 'Unauthorized: User no longer exists'
+      });
+    }
+
+    if (decoded.session_version !== user.session_version) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: Session has expired or logged out'
       });
     }
 
