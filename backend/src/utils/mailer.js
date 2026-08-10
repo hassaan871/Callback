@@ -18,11 +18,15 @@ const transporter = nodemailer.createTransport({
 /**
  * Renders the email template and sends the verification code.
  * @param {string} email
- * @param {string} otp
+ * @param {string} token
  */
-export const sendOTPEmail = async (email, otp) => {
-  const templatePath = path.join(__dirname, '../../views/otp-email.ejs');
-  const html = await ejs.renderFile(templatePath, { otp });
+export const sendActivationEmail = async (email, token) => {
+  const templatePath = path.join(__dirname, '../../views/activation-email.ejs');
+  
+  // Construct dynamic activation URL pointing to the React frontend route
+  const activationUrl = `http://localhost:5173/activate?token=${token}&email=${encodeURIComponent(email)}`;
+
+  const html = await ejs.renderFile(templatePath, { activationUrl });
 
   return transporter.sendMail({
     from: process.env.SMTP_FROM || '"Callback" <noreply@callback.com>',

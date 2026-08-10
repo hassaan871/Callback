@@ -57,8 +57,8 @@ export default function Signup() {
       return;
     }
 
-    // Simulate setting session and navigating to dashboard
-    navigate('/dashboard');
+    // Simulate redirecting to the email verification landing page
+    navigate('/check-email', { state: { email } });
   };
 
   return (
@@ -75,7 +75,7 @@ export default function Signup() {
         <p className="text-text-muted text-[0.92rem] mb-6">Start free — every track, a handful of sessions a month, full debriefs.</p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-          
+
           {/* Two-column layout for First Name and Last Name */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">

@@ -25,11 +25,11 @@ export const resetPasswordSchema = z.object({
   newPassword: passwordSchema
 });
 
-export const verifyOtpSchema = z.object({
+export const activateAccountSchema = z.object({
   email: z.string().email('Invalid email address').trim().toLowerCase(),
-  otp: z.string().length(6, 'OTP must be exactly 6 digits').regex(/^\d+$/, 'OTP must be numeric')
+  token: z.string().min(1, 'Token is required')
 });
 
-export const resendOtpSchema = z.object({
+export const resendActivationSchema = z.object({
   email: z.string().email('Invalid email address').trim().toLowerCase()
 });

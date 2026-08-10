@@ -2,12 +2,12 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { createUser, findUserByEmail } from '../repository/user.repository.js';
 import User from '../models/user.model.js';
-import OTP from '../models/otp.model.js';
+import Token from '../models/token.model.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { signupSchema, loginSchema, resetPasswordSchema, verifyOtpSchema, resendOtpSchema } from '../validations/auth.validation.js';
+import { signupSchema, loginSchema, resetPasswordSchema, activateAccountSchema, resendActivationSchema } from '../validations/auth.validation.js';
 import { hashPassword, comparePassword } from '../utils/bcrypt.utility.js';
 import { generateToken } from '../utils/jwt.utility.js';
-import { sendOTPEmail } from '../utils/mailer.js';
+import { sendActivationEmail } from '../utils/mailer.js';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -17,13 +17,12 @@ const COOKIE_OPTIONS = {
 };
 
 const COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown for generation requests
-const MAX_ATTEMPTS = 5; // Maximum validation attempts before OTP is invalidated
 
 /**
- * Checks if email has requested a code within the cooldown period.
+ * Checks if email has requested a token within the cooldown period.
  */
-const checkOTPCooldown = async (email) => {
-  const existingRecord = await OTP.findOne({ email });
+const checkTokenCooldown = async (email) => {
+  const existingRecord = await Token.findOne({ email });
   if (existingRecord) {
     const timeSinceLastRequest = Date.now() - new Date(existingRecord.createdAt).getTime();
     if (timeSinceLastRequest < COOLDOWN_MS) {
@@ -35,20 +34,20 @@ const checkOTPCooldown = async (email) => {
 };
 
 /**
- * Generates secure OTP, hashes it, upserts the record, and triggers Nodemailer template email dispatch.
+ * Generates secure token, hashes it, upserts the record, and triggers Nodemailer template email dispatch.
  */
-const generateAndSendOTP = async (email) => {
-  const otp = crypto.randomInt(100000, 1000000).toString();
+const generateAndSendActivation = async (email) => {
+  const token = crypto.randomBytes(32).toString('hex');
   const salt = await bcrypt.genSalt(10);
-  const otpHash = await bcrypt.hash(otp, salt);
+  const tokenHash = await bcrypt.hash(token, salt);
 
-  await OTP.findOneAndUpdate(
+  await Token.findOneAndUpdate(
     { email },
-    { otpHash, attempts: 0, createdAt: new Date() },
+    { tokenHash, createdAt: new Date() },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
-  await sendOTPEmail(email, otp);
+  await sendActivationEmail(email, token);
 };
 
 /**
@@ -76,20 +75,20 @@ export const signup = asyncHandler(async (req, res) => {
   const existingUser = await findUserByEmail(email);
   if (existingUser) {
     if (!existingUser.is_active) {
-      const rateLimitStatus = await checkOTPCooldown(email);
+      const rateLimitStatus = await checkTokenCooldown(email);
       if (rateLimitStatus.isRateLimited) {
         return res.status(429).json({
           success: false,
-          message: `An OTP was already sent. Please wait ${rateLimitStatus.secondsLeft} seconds before requesting a new one.`,
+          message: `An activation link was already sent. Please wait ${rateLimitStatus.secondsLeft} seconds before requesting a new one.`,
           requiresVerification: true,
           email
         });
       }
 
-      await generateAndSendOTP(email);
+      await generateAndSendActivation(email);
       return res.status(200).json({
         success: true,
-        message: 'A validation OTP has been resent to your email.',
+        message: 'A new activation link has been sent to your email.',
         requiresVerification: true,
         email
       });
@@ -113,11 +112,11 @@ export const signup = asyncHandler(async (req, res) => {
     is_active: false
   });
 
-  await generateAndSendOTP(email);
+  await generateAndSendActivation(email);
 
   return res.status(201).json({
     success: true,
-    message: 'User registered successfully. Please check your email for the activation OTP.',
+    message: 'User registered successfully. Please check your email for the activation link.',
     email: newUser.email,
     requiresVerification: true
   });
@@ -179,14 +178,14 @@ export const login = asyncHandler(async (req, res) => {
 
   // Verify activation status
   if (!user.is_active) {
-    const cooldownStatus = await checkOTPCooldown(user.email);
+    const cooldownStatus = await checkTokenCooldown(user.email);
     if (!cooldownStatus.isRateLimited) {
-      await generateAndSendOTP(user.email);
+      await generateAndSendActivation(user.email);
     }
 
     return res.status(403).json({
       success: false,
-      message: 'Account is not activated. An OTP code has been sent to your email.',
+      message: 'Account is not activated. An activation link has been sent to your email.',
       requiresVerification: true,
       email: user.email
     });
@@ -259,8 +258,8 @@ export const logout = asyncHandler(async (req, res) => {
   });
 });
 
-export const verifyOTP = asyncHandler(async (req, res) => {
-  const validation = verifyOtpSchema.safeParse(req.body);
+export const activateAccount = asyncHandler(async (req, res) => {
+  const validation = activateAccountSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({
       success: false,
@@ -269,7 +268,7 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     });
   }
 
-  const { email, otp } = validation.data;
+  const { email, token } = validation.data;
 
   const user = await findUserByEmail(email);
   if (!user) {
@@ -280,61 +279,41 @@ export const verifyOTP = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Account is already activated' });
   }
 
-  const otpRecord = await OTP.findOne({ email });
-  if (!otpRecord) {
+  const tokenRecord = await Token.findOne({ email });
+  if (!tokenRecord) {
     return res.status(400).json({
       success: false,
-      message: 'OTP has expired or does not exist. Please request a new one.'
+      message: 'Activation link has expired or is invalid. Please request a new one.'
     });
   }
 
-  if (otpRecord.attempts >= MAX_ATTEMPTS) {
-    await OTP.deleteOne({ email });
-    return res.status(400).json({
-      success: false,
-      message: 'Too many failed attempts. This OTP has been invalidated. Please request a new one.'
-    });
-  }
-
-  const isMatch = await bcrypt.compare(otp, otpRecord.otpHash);
+  const isMatch = await bcrypt.compare(token, tokenRecord.tokenHash);
   if (!isMatch) {
-    otpRecord.attempts += 1;
-    await otpRecord.save();
-
-    const remaining = MAX_ATTEMPTS - otpRecord.attempts;
-    if (remaining <= 0) {
-      await OTP.deleteOne({ email });
-      return res.status(400).json({
-        success: false,
-        message: 'Too many failed attempts. This OTP has been invalidated. Please request a new one.'
-      });
-    }
-
     return res.status(400).json({
       success: false,
-      message: `Invalid OTP. You have ${remaining} attempts remaining.`
+      message: 'Invalid or expired activation link. Please request a new one.'
     });
   }
 
-  await OTP.deleteOne({ email });
+  await Token.deleteOne({ email });
   user.is_active = true;
   await user.save();
 
-  const token = generateToken(user);
+  const sessionToken = generateToken(user);
   const { password: _, ...userData } = user.toObject();
 
   return res.status(200)
-    .cookie('token', token, COOKIE_OPTIONS)
+    .cookie('token', sessionToken, COOKIE_OPTIONS)
     .json({
       success: true,
       message: 'Email verified and account activated successfully.',
       user: userData,
-      token
+      token: sessionToken
     });
 });
 
-export const resendOTP = asyncHandler(async (req, res) => {
-  const validation = resendOtpSchema.safeParse(req.body);
+export const resendActivation = asyncHandler(async (req, res) => {
+  const validation = resendActivationSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({
       success: false,
@@ -353,18 +332,18 @@ export const resendOTP = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Account is already activated' });
   }
 
-  const rateLimitStatus = await checkOTPCooldown(email);
+  const rateLimitStatus = await checkTokenCooldown(email);
   if (rateLimitStatus.isRateLimited) {
     return res.status(429).json({
       success: false,
-      message: `Please wait ${rateLimitStatus.secondsLeft} seconds before requesting a new OTP.`
+      message: `Please wait ${rateLimitStatus.secondsLeft} seconds before requesting a new activation link.`
     });
   }
 
-  await generateAndSendOTP(email);
+  await generateAndSendActivation(email);
 
   return res.status(200).json({
     success: true,
-    message: 'A new OTP has been sent to your email.'
+    message: 'A new activation link has been sent to your email.'
   });
 });
