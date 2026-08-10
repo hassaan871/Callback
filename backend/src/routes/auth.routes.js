@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup, login, resetPassword, logout } from '../controllers/auth.controller.js';
+import { signup, login, resetPassword, logout, verifyOTP, resendOTP } from '../controllers/auth.controller.js';
 import { verifyJWT } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -105,6 +105,8 @@ router.post('/signup', signup);
  *         description: Invalid credentials
  */
 router.post('/login', login);
+router.post('/verify-otp', verifyOTP);
+router.post('/resend-otp', resendOTP);
 
 /**
  * @openapi

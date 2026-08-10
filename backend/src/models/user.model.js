@@ -45,6 +45,11 @@ const userSchema = new mongoose.Schema({
     default: false,
     required: true
   },
+  is_active: {
+    type: Boolean,
+    default: false,
+    required: true
+  },
   deleted_on: {
     type: Date,
     default: null

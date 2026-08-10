@@ -1,14 +1,54 @@
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { createUser, findUserByEmail } from '../repository/user.repository.js';
+import User from '../models/user.model.js';
+import OTP from '../models/otp.model.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { signupSchema, loginSchema, resetPasswordSchema } from '../validations/auth.validation.js';
+import { signupSchema, loginSchema, resetPasswordSchema, verifyOtpSchema, resendOtpSchema } from '../validations/auth.validation.js';
 import { hashPassword, comparePassword } from '../utils/bcrypt.utility.js';
 import { generateToken } from '../utils/jwt.utility.js';
+import { sendOTPEmail } from '../utils/mailer.js';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax',
   maxAge: 12 * 60 * 60 * 1000 // 12 hours to match JWT expiry
+};
+
+const COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown for generation requests
+const MAX_ATTEMPTS = 5; // Maximum validation attempts before OTP is invalidated
+
+/**
+ * Checks if email has requested a code within the cooldown period.
+ */
+const checkOTPCooldown = async (email) => {
+  const existingRecord = await OTP.findOne({ email });
+  if (existingRecord) {
+    const timeSinceLastRequest = Date.now() - new Date(existingRecord.createdAt).getTime();
+    if (timeSinceLastRequest < COOLDOWN_MS) {
+      const secondsLeft = Math.ceil((COOLDOWN_MS - timeSinceLastRequest) / 1000);
+      return { isRateLimited: true, secondsLeft };
+    }
+  }
+  return { isRateLimited: false };
+};
+
+/**
+ * Generates secure OTP, hashes it, upserts the record, and triggers Nodemailer template email dispatch.
+ */
+const generateAndSendOTP = async (email) => {
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  const salt = await bcrypt.genSalt(10);
+  const otpHash = await bcrypt.hash(otp, salt);
+
+  await OTP.findOneAndUpdate(
+    { email },
+    { otpHash, attempts: 0, createdAt: new Date() },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  await sendOTPEmail(email, otp);
 };
 
 /**
@@ -33,6 +73,34 @@ export const signup = asyncHandler(async (req, res) => {
     });
   }
 
+  const existingUser = await findUserByEmail(email);
+  if (existingUser) {
+    if (!existingUser.is_active) {
+      const rateLimitStatus = await checkOTPCooldown(email);
+      if (rateLimitStatus.isRateLimited) {
+        return res.status(429).json({
+          success: false,
+          message: `An OTP was already sent. Please wait ${rateLimitStatus.secondsLeft} seconds before requesting a new one.`,
+          requiresVerification: true,
+          email
+        });
+      }
+
+      await generateAndSendOTP(email);
+      return res.status(200).json({
+        success: true,
+        message: 'A validation OTP has been resent to your email.',
+        requiresVerification: true,
+        email
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: 'A user with this email already exists.'
+    });
+  }
+
   const hashedPassword = await hashPassword(password);
 
   const newUser = await createUser({
@@ -41,20 +109,18 @@ export const signup = asyncHandler(async (req, res) => {
     firstname,
     lastname,
     password: hashedPassword,
-    role: 'user'
+    role: 'user',
+    is_active: false
   });
 
-  const token = generateToken(newUser);
+  await generateAndSendOTP(email);
 
-  const { password: _, ...userData } = newUser.toObject();
-  return res.status(201)
-    .cookie('token', token, COOKIE_OPTIONS)
-    .json({
-      success: true,
-      message: 'User registered successfully',
-      user: userData,
-      token
-    });
+  return res.status(201).json({
+    success: true,
+    message: 'User registered successfully. Please check your email for the activation OTP.',
+    email: newUser.email,
+    requiresVerification: true
+  });
 });
 
 /**
@@ -108,6 +174,21 @@ export const login = asyncHandler(async (req, res) => {
     return res.status(401).json({
       success: false,
       message: 'This account has been deleted'
+    });
+  }
+
+  // Verify activation status
+  if (!user.is_active) {
+    const cooldownStatus = await checkOTPCooldown(user.email);
+    if (!cooldownStatus.isRateLimited) {
+      await generateAndSendOTP(user.email);
+    }
+
+    return res.status(403).json({
+      success: false,
+      message: 'Account is not activated. An OTP code has been sent to your email.',
+      requiresVerification: true,
+      email: user.email
     });
   }
 
@@ -175,5 +256,115 @@ export const logout = asyncHandler(async (req, res) => {
   return res.status(200).json({
     success: true,
     message: 'Logged out successfully'
+  });
+});
+
+export const verifyOTP = asyncHandler(async (req, res) => {
+  const validation = verifyOtpSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: validation.error.errors
+    });
+  }
+
+  const { email, otp } = validation.data;
+
+  const user = await findUserByEmail(email);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  if (user.is_active) {
+    return res.status(400).json({ success: false, message: 'Account is already activated' });
+  }
+
+  const otpRecord = await OTP.findOne({ email });
+  if (!otpRecord) {
+    return res.status(400).json({
+      success: false,
+      message: 'OTP has expired or does not exist. Please request a new one.'
+    });
+  }
+
+  if (otpRecord.attempts >= MAX_ATTEMPTS) {
+    await OTP.deleteOne({ email });
+    return res.status(400).json({
+      success: false,
+      message: 'Too many failed attempts. This OTP has been invalidated. Please request a new one.'
+    });
+  }
+
+  const isMatch = await bcrypt.compare(otp, otpRecord.otpHash);
+  if (!isMatch) {
+    otpRecord.attempts += 1;
+    await otpRecord.save();
+
+    const remaining = MAX_ATTEMPTS - otpRecord.attempts;
+    if (remaining <= 0) {
+      await OTP.deleteOne({ email });
+      return res.status(400).json({
+        success: false,
+        message: 'Too many failed attempts. This OTP has been invalidated. Please request a new one.'
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      message: `Invalid OTP. You have ${remaining} attempts remaining.`
+    });
+  }
+
+  await OTP.deleteOne({ email });
+  user.is_active = true;
+  await user.save();
+
+  const token = generateToken(user);
+  const { password: _, ...userData } = user.toObject();
+
+  return res.status(200)
+    .cookie('token', token, COOKIE_OPTIONS)
+    .json({
+      success: true,
+      message: 'Email verified and account activated successfully.',
+      user: userData,
+      token
+    });
+});
+
+export const resendOTP = asyncHandler(async (req, res) => {
+  const validation = resendOtpSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: validation.error.errors
+    });
+  }
+
+  const { email } = validation.data;
+  const user = await findUserByEmail(email);
+  if (!user) {
+    return res.status(404).json({ success: false, message: 'User not found' });
+  }
+
+  if (user.is_active) {
+    return res.status(400).json({ success: false, message: 'Account is already activated' });
+  }
+
+  const rateLimitStatus = await checkOTPCooldown(email);
+  if (rateLimitStatus.isRateLimited) {
+    return res.status(429).json({
+      success: false,
+      message: `Please wait ${rateLimitStatus.secondsLeft} seconds before requesting a new OTP.`
+    });
+  }
+
+  await generateAndSendOTP(email);
+
+  return res.status(200).json({
+    success: true,
+    message: 'A new OTP has been sent to your email.'
   });
 });
